@@ -1,150 +1,165 @@
 """
-Script Writer — turns (topic, style) into a structured narration script.
-Upgraded to use LLMs (OpenAI) for cinematic storytelling, hooks, and AI video prompts.
-Now generates emotion-aware, cinema-grade visual prompts with full scene metadata.
+Script Writer — turns (topic, style) into a structured movie-aware narration script.
+Uses Google Gemini API (free tier) to generate scripts with real knowledge of the movie:
+plot, characters, themes, iconic scenes, and memorable moments.
 """
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from config import OPENAI_API_KEY, LLM_MODEL, STYLE_PRESETS
+from config import GEMINI_API_KEY, GEMINI_MODEL, STYLE_PRESETS
 
 logger = logging.getLogger(__name__)
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "script_templates.json"
+# ── Movie-aware system prompt ──────────────────────────────────
+MOVIE_SYSTEM_PROMPT = """\
+You are an expert film critic and YouTube video scriptwriter.
+You have deep knowledge of movies — plots, characters, themes, iconic scenes,
+cinematography, director's style, cultural impact, and critical reception.
 
-# ── Cinematic system prompt ────────────────────────────────────
-CINEMATIC_SYSTEM_PROMPT = """\
-You are a world-class cinematic YouTube scriptwriter AND visual director.
-You write narration AND direct every frame like a top-tier documentary filmmaker.
+When given a movie title, you write an ENGAGING, ACCURATE narration script that:
+1. Mentions real characters by name (e.g. "Tony Stark", "The Joker", "Katniss Everdeen")
+2. References actual iconic scenes (e.g. "the interrogation scene", "the hallway fight")
+3. Discusses real themes (e.g. "obsession and identity", "survival vs humanity")
+4. Includes the director's name and notable cinematography choices
+5. Gives the audience real information they'd find in a quality film review/essay
 
-═══ VISUAL PROMPT FORMULA (MANDATORY FOR EVERY SCENE) ═══
-Every visual_prompt MUST follow this exact 4-part structure:
-  [Camera movement] + [Subject & specific action] + [Emotional atmosphere] + [Lighting & film style]
+For EACH scene's search_query field, write a YouTube search query that will find
+ACTUAL CLIPS or TRAILERS from that specific movie — be precise and movie-specific.
 
-Examples by emotion:
-• TENSE narration → "Slow dolly in on a man's trembling hands gripping a steel railing, claustrophobic framing with shallow depth of field, cold fluorescent lighting with desaturated teal grade, shot on Arri Alexa with anamorphic lens flare"
-• EPIC narration → "Wide sweeping crane shot over vast mountain ridges as clouds part to reveal golden valleys below, awe-inspiring scale with tiny human silhouette, golden hour backlight with warm amber tones, shot on 65mm IMAX film stock"
-• MYSTERIOUS narration → "Slow push-in through heavy fog toward a half-open door in an abandoned corridor, negative space dominates the frame with deep shadows, low-key lighting with cool blue undertones and volumetric haze, Fincher-style digital intermediate"
-• SORROWFUL narration → "Extreme close-up of a single raindrop sliding down a window pane with a blurred cityscape behind, rack focus from foreground to distant lights, overcast natural light with desaturated muted film palette, shot on vintage Cooke lenses"
-• TRIUMPHANT narration → "Low-angle tracking shot of a figure walking toward camera against a blazing sunset sky, heroic composition with dust particles catching light, warm golden hour with lens flare, Deakins-style natural lighting on film"
+Examples of good search_query values:
+  - "Inception corridor fight scene HD"
+  - "The Dark Knight Joker interrogation scene"
+  - "Interstellar docking scene IMAX"
+  - "Parasite official trailer"
+  - "No Country for Old Men coin toss scene"
 
-═══ EMOTION-TO-VISUAL RULES (FOLLOW STRICTLY) ═══
-The visual_prompt must match the EMOTION of the narration, not merely illustrate the topic:
-• Dread → tight framing, cold light, stillness, shallow DOF, close angles
-• Epic → wide sweeping shots, golden hour, slow motion feel, vast scale
-• Mystery → negative space, fog/haze, low light, slow push-in, cool tones
-• Sorrow → close-ups, desaturated, rain/dust/particles, rack focus, soft light
-• Triumph → low angles, golden backlight, hero framing, warm tones, flare
-• Tension → handheld feel, dutch angle, quick reframing, high contrast, shadow
+BAD search queries (never do these):
+  - "fire explosion action" (too generic)
+  - "mountains clouds dramatic" (stock footage keywords)
+  - "cinematic landscape" (not movie-specific)
 
-═══ SCENE JSON FIELDS (ALL REQUIRED) ═══
-For each scene you MUST fill ALL of these fields:
-- "narration": the spoken text
-- "emotion": one of "dread" | "epic" | "mystery" | "sorrow" | "triumph" | "tension"
-- "intensity": float 0.0 to 1.0 (how strong the emotion is)
-- "pacing": "slow" | "medium" | "fast"
-- "visual_prompt": the 4-part cinematic prompt described above
-- "camera_move": one of "dolly_in" | "dolly_back" | "tracking" | "static_wide" | "crane_down" | "push_close" | "pan_left" | "pan_right"
-- "color_grade": one of "cold_desaturated" | "warm_golden" | "teal_orange" | "high_contrast" | "muted_film"
-- "music_cue": one of "swell_up" | "swell_down" | "hold" | "silence"
-- "cut_style": one of "hard_cut" | "dissolve" | "fade_black"
-- "keywords": list of 3-5 visual noun keywords for stock footage search (NO trademarked names, only visual descriptors)
-
-Choose emotion, camera_move, color_grade, music_cue, and cut_style based on the NARRATIVE CONTEXT of each scene.
-Scene 1 should usually start with "swell_up" music_cue. The final scene should use "swell_down" or "fade_black".
-Vary emotions across scenes for dramatic arc — not every scene should be the same emotion.
+IMPORTANT: Every search_query MUST include the movie title or a key character name.
 """
 
 
 class ScriptWriter:
-    """Generate a narration script from a topic and a style preset."""
+    """Generate a movie-aware narration script using Gemini API."""
 
     def __init__(self):
-        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
-            self.templates: Dict = json.load(f)
-        
         self.client = None
-        if OPENAI_API_KEY:
-            try:
-                from openai import OpenAI
-                self.client = OpenAI(api_key=OPENAI_API_KEY)
-            except ImportError:
-                logger.warning("OpenAI package not found. Falling back to templates.")
+        self._setup_gemini()
+
+    def _setup_gemini(self):
+        """Initialize Gemini client."""
+        if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
+            logger.warning("GEMINI_API_KEY not set — script writer will use fallback templates.")
+            return
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=GEMINI_API_KEY)
+            self.client = genai.GenerativeModel(
+                model_name=GEMINI_MODEL,
+                generation_config={
+                    "temperature": 0.8,
+                    "top_p": 0.95,
+                    "max_output_tokens": 4096,
+                    "response_mime_type": "application/json",
+                },
+                system_instruction=MOVIE_SYSTEM_PROMPT,
+            )
+            logger.info("Gemini client initialized: model=%s", GEMINI_MODEL)
+        except ImportError:
+            logger.error("google-generativeai not installed. Run: pip install google-generativeai")
+        except Exception as e:
+            logger.error("Gemini setup failed: %s", e)
 
     # ── public ──────────────────────────────────────────────────
     def generate(self, topic: str, style: str = "documentary", duration: int = 180) -> Dict:
         """
-        Return a script dict. If OpenAI is available, it generates a cinematic script.
-        Otherwise, falls back to local templates.
+        Return a script dict with movie-aware narration and precise YouTube search queries.
+        Falls back to a basic template if Gemini is unavailable.
         """
         if self.client:
             try:
-                return self._generate_ai(topic, style, duration)
+                return self._generate_with_gemini(topic, style, duration)
             except Exception as e:
-                logger.error(f"AI Script generation failed: {e}. Falling back to templates.")
+                logger.error("Gemini script generation failed: %s. Using fallback.", e)
 
-        return self._generate_template(topic, style)
+        return self._generate_fallback(topic, style)
 
-    # ── AI Generation ──────────────────────────────────────────
-    def _generate_ai(self, topic: str, style: str, duration: int) -> Dict:
+    # ── Gemini Generation ──────────────────────────────────────
+    def _generate_with_gemini(self, topic: str, style: str, duration: int) -> Dict:
         preset = STYLE_PRESETS.get(style, STYLE_PRESETS["documentary"])
         mood = preset.get("mood", "informative")
-        
-        user_prompt = f"""
-Create a professional {style} video script about '{topic}'.
-Target duration: {duration} seconds.
-Tone: {mood}, cinematic, engaging.
 
-Requirements:
-1. STRONG HOOK in scene 1 (first 5 seconds — grab attention immediately).
-2. Break into 10-15 scenes with a clear dramatic arc (setup → rising action → climax → resolution).
-3. Every scene's visual_prompt MUST follow the 4-part formula: [Camera movement] + [Subject & action] + [Emotional atmosphere] + [Lighting & film style].
-4. Match visuals to the EMOTION of the narration, not just the topic.
-5. For 'keywords', use VISUAL NOUNS found on stock sites (e.g., 'ancient castle corridor', 'mystical library'). NO trademarked names.
+        # Detect if topic is likely a movie
+        movie_hint = self._detect_movie_context(topic)
+
+        user_prompt = f"""
+Create a professional {style} YouTube video script about the movie '{topic}'.
+Target duration: {duration} seconds ({duration // 6} to {duration // 5} scenes).
+Tone: {mood}, engaging, informative.
+
+{movie_hint}
+
+REQUIREMENTS:
+1. STRONG HOOK in scene 1 — grab attention with a bold claim or iconic moment from the film.
+2. Narration must reference REAL details: character names, actor names, director, iconic scenes, themes.
+3. Each scene's "search_query" must be a precise YouTube search that will find actual clips/trailers
+   from THIS specific movie — always include the movie title or main character name in the query.
+4. Vary query types across scenes: use trailer, specific scene, behind the scenes, review clips.
+5. The final scene should be a strong conclusion — legacy, impact, or recommendation.
 
 Return ONLY valid JSON in this exact format:
 {{
     "topic": "{topic}",
-    "summary": "...",
+    "is_movie": true,
+    "director": "Director Name",
+    "year": "YYYY",
+    "summary": "One sentence about what this video covers",
     "scenes": [
         {{
             "scene_id": 1,
             "type": "intro",
-            "narration": "...",
+            "narration": "The spoken narration text for this scene...",
+            "search_query": "Exact YouTube search query to find a clip from this movie",
+            "clip_type": "trailer",
             "emotion": "mystery",
             "intensity": 0.7,
             "pacing": "slow",
-            "visual_prompt": "[Camera movement] + [Subject & action] + [Emotional atmosphere] + [Lighting & film style]",
             "camera_move": "dolly_in",
             "color_grade": "cold_desaturated",
             "music_cue": "swell_up",
             "cut_style": "fade_black",
-            "keywords": ["visual_noun_1", "visual_noun_2", "visual_noun_3"],
             "estimated_duration": 8.0
         }}
     ]
 }}
+
+clip_type options: "trailer" | "scene" | "featurette" | "review" | "breakdown"
+emotion options: "epic" | "mystery" | "sorrow" | "triumph" | "tension" | "dread"
 """
 
-        response = self.client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": CINEMATIC_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={"type": "json_object"}
-        )
+        logger.info("Calling Gemini API for movie script: %s", topic)
+        response = self.client.generate_content(user_prompt)
 
-        script = json.loads(response.choices[0].message.content)
+        raw = response.text.strip()
+        # Strip markdown code fences if present
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+
+        script = json.loads(raw)
         script["style"] = style
 
-        # Validate and backfill any missing cinematic fields
-        for scene in script.get("scenes", []):
+        # Validate and backfill missing fields
+        for i, scene in enumerate(script.get("scenes", []), 1):
+            scene.setdefault("scene_id", i)
             scene.setdefault("emotion", "epic")
             scene.setdefault("intensity", 0.5)
             scene.setdefault("pacing", "medium")
@@ -152,74 +167,77 @@ Return ONLY valid JSON in this exact format:
             scene.setdefault("color_grade", "muted_film")
             scene.setdefault("music_cue", "hold")
             scene.setdefault("cut_style", "hard_cut")
+            scene.setdefault("clip_type", "scene")
 
+            # Ensure search_query always includes the movie title
+            sq = scene.get("search_query", "")
+            if topic.lower() not in sq.lower():
+                scene["search_query"] = f"{topic} {sq}".strip()
+
+        logger.info(
+            "Gemini script generated: %d scenes for '%s' (%s, %s)",
+            len(script["scenes"]), topic,
+            script.get("director", "unknown director"),
+            script.get("year", "unknown year"),
+        )
         return script
 
-    # ── Template Fallback ──────────────────────────────────────
-    # Emotion mapping for template-based generation (heuristic)
-    _TEMPLATE_EMOTION_MAP = {
-        "intro": ("mystery", 0.6, "slow", "dolly_in", "cold_desaturated", "swell_up", "fade_black"),
-        "body": ("epic", 0.5, "medium", "tracking", "muted_film", "hold", "hard_cut"),
-        "outro": ("triumph", 0.7, "slow", "dolly_back", "warm_golden", "swell_down", "dissolve"),
-    }
-
-    def _generate_template(self, topic: str, style: str) -> Dict:
-        if style not in self.templates:
-            style = "documentary"
-
-        tpl = self.templates[style]
-        scenes: List[Dict] = []
-        scene_id = 1
-
-        # Combine all parts into scenes
-        raw_scenes = [tpl["intro"]] + tpl["scenes"] + [tpl["outro"]]
-        
-        for i, text in enumerate(raw_scenes):
-            scene_type = "intro" if i == 0 else ("outro" if i == len(raw_scenes) - 1 else "body")
-            emo, intensity, pacing, cam, color, music, cut = self._TEMPLATE_EMOTION_MAP[scene_type]
-            
-            # Vary emotion across body scenes for a dramatic arc
-            if scene_type == "body":
-                body_emotions = [
-                    ("epic", 0.5, "medium", "tracking", "warm_golden", "hold", "hard_cut"),
-                    ("mystery", 0.6, "slow", "dolly_in", "cold_desaturated", "hold", "dissolve"),
-                    ("tension", 0.7, "fast", "push_close", "high_contrast", "hold", "hard_cut"),
-                    ("epic", 0.8, "medium", "crane_down", "teal_orange", "swell_up", "hard_cut"),
-                    ("sorrow", 0.5, "slow", "static_wide", "muted_film", "hold", "dissolve"),
-                    ("triumph", 0.9, "fast", "tracking", "warm_golden", "swell_up", "hard_cut"),
-                    ("dread", 0.6, "slow", "dolly_back", "cold_desaturated", "silence", "fade_black"),
-                    ("mystery", 0.7, "medium", "pan_left", "teal_orange", "hold", "dissolve"),
-                    ("epic", 0.6, "medium", "crane_down", "warm_golden", "hold", "hard_cut"),
-                    ("tension", 0.8, "fast", "push_close", "high_contrast", "swell_up", "hard_cut"),
-                    ("triumph", 0.9, "medium", "tracking", "warm_golden", "swell_up", "dissolve"),
-                    ("sorrow", 0.4, "slow", "static_wide", "muted_film", "swell_down", "fade_black"),
-                ]
-                body_idx = (i - 1) % len(body_emotions)
-                emo, intensity, pacing, cam, color, music, cut = body_emotions[body_idx]
-
-            narration = text.format(topic=topic)
+    # ── Fallback ───────────────────────────────────────────────
+    def _generate_fallback(self, topic: str, style: str) -> Dict:
+        """Basic fallback when Gemini is unavailable — still movie-aware via hardcoded queries."""
+        logger.warning("Using fallback script for '%s'", topic)
+        scenes = []
+        queries = [
+            f"{topic} official trailer",
+            f"{topic} best scenes HD",
+            f"{topic} iconic scene",
+            f"{topic} movie clip",
+            f"{topic} opening scene",
+            f"{topic} final scene",
+        ]
+        narrations = [
+            f"Welcome. Today we're diving deep into {topic} — one of the most compelling films ever made.",
+            f"From the very first frame, {topic} establishes a world that is impossible to ignore.",
+            f"The characters at the heart of {topic} are unforgettable, each one layered with complexity.",
+            f"What truly sets {topic} apart is its stunning visual language and masterful direction.",
+            f"The themes explored in {topic} resonate long after the credits roll.",
+            f"{topic} stands as a landmark achievement in modern cinema. Here's why it matters.",
+        ]
+        for i, (narration, query) in enumerate(zip(narrations, queries), 1):
             scenes.append({
-                "scene_id": scene_id,
-                "type": scene_type,
+                "scene_id": i,
+                "type": "intro" if i == 1 else ("outro" if i == len(narrations) else "body"),
                 "narration": narration,
-                "emotion": emo,
-                "intensity": intensity,
-                "pacing": pacing,
-                "visual_prompt": f"Cinematic {cam.replace('_', ' ')} shot of {topic}, {emo} atmosphere, film-grade lighting",
-                "camera_move": cam,
-                "color_grade": color,
-                "music_cue": music,
-                "cut_style": cut,
-                "keywords": [topic, style],
-                "estimated_duration": 6.0,
+                "search_query": query,
+                "clip_type": "trailer" if i == 1 else "scene",
+                "emotion": "epic",
+                "intensity": 0.6,
+                "pacing": "medium",
+                "camera_move": "static_wide",
+                "color_grade": "muted_film",
+                "music_cue": "swell_up" if i == 1 else ("swell_down" if i == len(narrations) else "hold"),
+                "cut_style": "fade_black" if i == 1 else "hard_cut",
+                "estimated_duration": 8.0,
             })
-            scene_id += 1
-
         return {
             "topic": topic,
             "style": style,
+            "is_movie": True,
+            "director": "Unknown",
+            "year": "",
+            "summary": f"A deep dive into the movie {topic}",
             "scenes": scenes,
         }
 
+    @staticmethod
+    def _detect_movie_context(topic: str) -> str:
+        """Return extra instructions hinting Gemini about the movie type."""
+        topic_lower = topic.lower()
+        if any(w in topic_lower for w in ["trilogy", "part", "chapter", "episode"]):
+            return f"Note: '{topic}' appears to be part of a series — focus on this specific installment."
+        if re.search(r"\b(19|20)\d{2}\b", topic):
+            return f"Note: The year is specified in the title — reference the correct film."
+        return f"Note: Write as if you are a knowledgeable film critic who has seen '{topic}' multiple times."
+
     def available_styles(self) -> List[str]:
-        return list(self.templates.keys())
+        return list(STYLE_PRESETS.keys())

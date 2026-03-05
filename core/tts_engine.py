@@ -12,30 +12,18 @@ from config import (
     AUDIO_SAMPLE_RATE,
     FFPROBE_BIN,
     EDGE_TTS_VOICE,
-    ELEVENLABS_API_KEY,
-    ELEVEN_VOICE_ID,
-    TTS_PROVIDER
 )
 
 logger = logging.getLogger(__name__)
 
 
 class TTSEngine:
-    """Text-to-speech engine with Parallel Processing and Premium ElevenLabs support."""
+    """Text-to-speech engine using edge-tts (free Microsoft neural voices)."""
 
     def __init__(self, project_id: str = "default"):
         self.output_dir = TEMP_DIR / project_id / "tts"
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.provider = TTS_PROVIDER
-        
-        if self.provider == "elevenlabs" and ELEVENLABS_API_KEY:
-            try:
-                from elevenlabs.client import ElevenLabs
-                self.el_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-                logger.info("ElevenLabs Premium TTS loaded.")
-            except ImportError:
-                logger.warning("ElevenLabs package not found. Falling back to edge-tts.")
-                self.provider = "edge-tts"
+        self.provider = "edge-tts"
 
     def set_project(self, project_id: str):
         self.output_dir = TEMP_DIR / project_id / "tts"
@@ -53,10 +41,7 @@ class TTSEngine:
             with open(timing_path, "r") as f:
                 return out_path, json.load(f)
 
-        if self.provider == "elevenlabs":
-            audio, timing = self._synthesize_eleven(text, out_path)
-        else:
-            audio, timing = self._synthesize_edge(text, out_path)
+        audio, timing = self._synthesize_edge(text, out_path)
         
         # Cache timing
         import json
@@ -119,14 +104,6 @@ class TTSEngine:
             asyncio.run(_run())
         
         return out_path, word_data
-
-    def _synthesize_eleven(self, text: str, out_path: Path) -> tuple[Path, List[dict]]:
-        """Placeholder for ElevenLabs word-level sync (requires WebSocket/V2 API)."""
-        # For now, back to edge-tts if we need word timing, or mock it
-        logger.warning("ElevenLabs word-level sync not yet fully integrated. Mocking timing.")
-        audio = self._synthesize_edge(text, out_path)[0]
-        # Return mocked or empty for now if ElevenLabs
-        return audio, []
 
     @staticmethod
     def get_audio_duration(audio_path: Path) -> float:
