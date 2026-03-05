@@ -18,5 +18,10 @@
         "search_style": "cinematic dramatic",
         "keywords_suffix": ["landscape", "ocean", "dramatic", "dark"],
         "preferred_type": "videos"
+    },
+    "video_essay_premium": {
+        "search_style": "gritty cinematic retro",
+        "keywords_suffix": ["urban", "vintage", "textures", "dynamic"],
+        "preferred_type": "videos"
     }
 }

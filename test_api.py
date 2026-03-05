@@ -1,10 +1,21 @@
-"""Quick API test"""
-import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
-from core.pixabay_fetcher import PixabayFetcher
 
-f = PixabayFetcher()
-results = f.search(["Black Holes", "space"], "videos")
-print(f"{len(results)} video results:")
-for r in results[:3]:
-    print(f"  id={r['id']}  {r['width']}x{r['height']}  dur={r.get('duration',0)}s  url={r['url'][:80]}...")
+import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(os.getcwd()) / "core"))
+from core.pixabay_fetcher import PixabayFetcher
+from config import PIXABAY_API_KEY
+
+def test_pixabay():
+    print(f"Testing Pixabay with key: {PIXABAY_API_KEY[:5]}...")
+    fetcher = PixabayFetcher()
+    try:
+        results = fetcher.search(["space", "cinematic"], media_type="videos")
+        print(f"Success! Found {len(results)} videos.")
+        if results:
+            print(f"First result: {results[0]['url']}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    test_pixabay()

@@ -27,82 +27,90 @@ class SubtitleGenerator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── public ──────────────────────────────────────────────────
-    def generate_srt(self, scene_plan: Dict, max_chars_per_line: int = 42) -> Path:
+    # ── public ──────────────────────────────────────────────────
+    def generate_ass(self, scene_plan: Dict) -> Path:
         """
-        Walk the scene plan and produce an SRT file with per‑sentence cues.
+        Generate a cinematic .ass subtitle file with word-by-word highlighting.
+        """
+        ass_path = self.output_dir / "subtitles.ass"
+        
+        # ASS Header & Styles
+        header = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: 1920",
+            "PlayResY: 1080",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Default,Arial,60,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,2,2,10,10,80,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+        ]
 
-        Uses TTS durations for accurate timing.  Each narration is split
-        into sentences; timing is distributed proportionally by word count.
-        """
-        srt_path = self.output_dir / "subtitles.srt"
-        cues: List[str] = []
-        cue_index = 1
-        timeline_offset = 0.0  # running clock in seconds
+        events = []
+        timeline_offset = 0.0
 
         for scene in scene_plan["scenes"]:
-            tts_dur = scene.get("tts_duration", scene.get("estimated_duration", 5.0))
-            narration = scene["narration"]
+            tts_dur = scene.get("tts_duration", 5.0)
+            word_timing = scene.get("word_timing", [])
 
-            # split into sentences
-            sentences = self._split_sentences(narration)
-            total_words = sum(len(s.split()) for s in sentences)
-            if total_words == 0:
-                timeline_offset += tts_dur + SCENE_PADDING
-                continue
-
-            sentence_offset = timeline_offset
-            for sentence in sentences:
-                word_count = len(sentence.split())
-                sentence_dur = (word_count / total_words) * tts_dur
-                start = sentence_offset
-                end = sentence_offset + sentence_dur
-
-                # wrap long lines
-                lines = self._wrap(sentence, max_chars_per_line)
-
-                cues.append(
-                    f"{cue_index}\n"
-                    f"{self._ts(start)} --> {self._ts(end)}\n"
-                    f"{lines}\n"
-                )
-                cue_index += 1
-                sentence_offset = end
+            if not word_timing:
+                # Fallback: sentence-based timing (no word-level data)
+                sentences = self._split_sentences(scene["narration"])
+                total_words = sum(len(s.split()) for s in sentences) or 1
+                sentence_offset = timeline_offset
+                for sentence in sentences:
+                    wc = len(sentence.split())
+                    dur = (wc / total_words) * tts_dur
+                    start = sentence_offset
+                    end = sentence_offset + dur
+                    events.append(
+                        f"Dialogue: 0,{self._ass_ts(start)},{self._ass_ts(end)},Default,,0,0,0,,{sentence}"
+                    )
+                    sentence_offset = end
+            else:
+                # Word-by-word animation grouped into 3-4 word phrases
+                PHRASE_SIZE = 4
+                for i in range(0, len(word_timing), PHRASE_SIZE):
+                    group = word_timing[i:i + PHRASE_SIZE]
+                    phrase_start = timeline_offset + group[0]["start"]
+                    last = group[-1]
+                    phrase_end = timeline_offset + last["start"] + last.get("duration", 0.4)
+                    
+                    # Build phrase with current-word highlight
+                    phrase_words = [w["word"] for w in group]
+                    # Show full phrase, highlight the last word in cyan
+                    plain = " ".join(phrase_words[:-1])
+                    highlighted = phrase_words[-1]
+                    if plain:
+                        text = f"{plain} {{\\c&H00FFFF&}}{highlighted}{{\\c&HFFFFFF&}}"
+                    else:
+                        text = f"{{\\c&H00FFFF&}}{highlighted}{{\\c&HFFFFFF&}}"
+                    
+                    events.append(
+                        f"Dialogue: 0,{self._ass_ts(phrase_start)},{self._ass_ts(phrase_end)},Default,,0,0,0,,{text}"
+                    )
 
             timeline_offset += tts_dur + SCENE_PADDING
 
-        srt_text = "\n".join(cues)
-        srt_path.write_text(srt_text, encoding="utf-8")
-        logger.info("SRT written: %s (%d cues)", srt_path.name, cue_index - 1)
-        return srt_path
-
-    # ── helpers ─────────────────────────────────────────────────
-    @staticmethod
-    def _split_sentences(text: str) -> List[str]:
-        """Naive sentence splitter on . ! ?"""
-        import re
-        parts = re.split(r'(?<=[.!?])\s+', text.strip())
-        return [p.strip() for p in parts if p.strip()]
+        ass_content = "\n".join(header + events)
+        ass_path.write_text(ass_content, encoding="utf-8")
+        logger.info(f"ASS subtitles written: {ass_path.name}")
+        return ass_path
 
     @staticmethod
-    def _wrap(text: str, max_len: int) -> str:
-        """Wrap text into lines of ≤max_len characters."""
-        words = text.split()
-        lines, current = [], ""
-        for w in words:
-            if current and len(current) + 1 + len(w) > max_len:
-                lines.append(current)
-                current = w
-            else:
-                current = f"{current} {w}".strip()
-        if current:
-            lines.append(current)
-        return "\n".join(lines)
-
-    @staticmethod
-    def _ts(seconds: float) -> str:
-        """Convert seconds → SRT timestamp  HH:MM:SS,mmm"""
+    def _ass_ts(seconds: float) -> str:
+        """Convert seconds → ASS timestamp H:MM:SS.cc"""
         h = int(seconds // 3600)
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
-        ms = int((seconds - int(seconds)) * 1000)
-        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+        cs = int((seconds - int(seconds)) * 100) # centiseconds
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    @staticmethod
+    def _split_sentences(text: str) -> List[str]:
+        import re
+        return [p.strip() for p in re.split(r'(?<=[.!?])\s+', text.strip()) if p.strip()]

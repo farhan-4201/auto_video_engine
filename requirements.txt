@@ -13,6 +13,10 @@ imageio-ffmpeg>=0.5.1
 #   Linux:    sudo apt install ffmpeg
 #   macOS:    brew install ffmpeg
 
+# AI Services
+openai>=1.0.0
+elevenlabs>=1.0.0
+
 # Optional: uncomment for additional TTS backends
 # TTS>=0.22.0         # Coqui TTS — fully local neural voice (needs C++ build tools)
 # pyttsx3>=2.90       # offline fallback (robotic but zero deps)

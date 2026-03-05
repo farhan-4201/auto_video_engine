@@ -102,6 +102,16 @@ STYLE_PRESETS = {
         "bg_music_volume": 0.10,
         "tts_speed": 0.9,
         "color_filter": "colorbalance=bs=.3",
+        "mood": "cinematic",
+    },
+    "video_essay_premium": {
+        "pexels_orientation": "landscape",
+        "pexels_size": "large",
+        "scene_transition": "crossfade",
+        "bg_music_volume": 0.10,
+        "tts_speed": 0.92,
+        "color_filter": "none",
+        "mood": "thoughtful",
     },
 }
 
@@ -129,6 +139,20 @@ def _find_ffmpeg():
         return "ffmpeg", "ffprobe"  # hope it's on PATH
 
 FFMPEG_BIN, FFPROBE_BIN = _find_ffmpeg()
+
+# ── OpenAI / LLM ───────────────────────────────────────────────
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+
+# ── ElevenLabs TTS ─────────────────────────────────────────────
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVEN_VOICE_ID = os.environ.get("ELEVEN_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Adam
+TTS_PROVIDER = os.environ.get("TTS_PROVIDER", "edge-tts")  # "edge-tts" | "elevenlabs"
+
+# ── Runway AI Video ────────────────────────────────────────────
+RUNWAY_API_KEY = os.environ.get("RUNWAY_API_KEY", "")
+AI_VIDEO_MODEL = os.environ.get("AI_VIDEO_MODEL", "gen4_turbo")
+AI_VIDEO_RATIO = float(os.environ.get("AI_VIDEO_RATIO", "0.75"))
 
 # ── Logging ────────────────────────────────────────────────────
 LOG_LEVEL = "INFO"

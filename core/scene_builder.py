@@ -24,47 +24,44 @@ class SceneBuilder:
     # ── public ──────────────────────────────────────────────────
     def build(self, script: Dict) -> Dict:
         """
-        Takes a script dict from ScriptWriter.generate() and returns:
-        {
-            "topic": str,
-            "style": str,
-            "total_scenes": int,
-            "scenes": [
-                {
-                    "scene_id": int,
-                    "type": str,
-                    "narration": str,
-                    "search_keywords": [str, ...],
-                    "media_type": "photos" | "videos",
-                    "estimated_duration": float,   # seconds
-                    "tts_file": null,               # filled later
-                    "media_file": null,             # filled later
-                },
-                ...
-            ]
-        }
+        Takes a script dict (either LLM-generated or template-based)
+        and ensures it has all fields needed for fetching and rendering.
         """
-        style = script["style"]
-        topic = script["topic"]
+        style = script.get("style", "documentary")
+        topic = script.get("topic", "unknown")
         hint = self.hints.get(style, self.hints["documentary"])
 
         enriched_scenes: List[Dict] = []
 
         for scene in script["scenes"]:
-            keywords = self._extract_keywords(scene["narration"], topic)
-            # append a style‑specific suffix to improve search quality
-            suffix = hint["keywords_suffix"]
-            search_kw = keywords + [suffix[scene["scene_id"] % len(suffix)]]
+            # Prioritize existing fields from LLM, otherwise generate
+            narration = scene.get("narration", "")
+            keywords = scene.get("keywords") or self._extract_keywords(narration, topic)
+            
+            # append a style-specific suffix if it's from templates (not LLM)
+            if not scene.get("keywords"):
+                suffix = hint["keywords_suffix"]
+                keywords = keywords + [suffix[scene["scene_id"] % len(suffix)]]
 
-            est_dur = self._estimate_duration(scene["narration"])
+            est_dur = scene.get("estimated_duration") or self._estimate_duration(narration)
 
             enriched_scenes.append({
                 "scene_id": scene["scene_id"],
-                "type": scene["type"],
-                "narration": scene["narration"],
-                "search_keywords": search_kw,
+                "type": scene.get("type", "body"),
+                "narration": narration,
+                "visual_prompt": scene.get("visual_prompt", f"cinematic footage of {topic}"),
+                "search_keywords": keywords,
                 "media_type": hint["preferred_type"],
                 "estimated_duration": round(est_dur, 2),
+                # Cinematic metadata (passthrough from ScriptWriter)
+                "emotion": scene.get("emotion", "epic"),
+                "intensity": scene.get("intensity", 0.5),
+                "pacing": scene.get("pacing", "medium"),
+                "camera_move": scene.get("camera_move", "static_wide"),
+                "color_grade": scene.get("color_grade", "muted_film"),
+                "music_cue": scene.get("music_cue", "hold"),
+                "cut_style": scene.get("cut_style", "hard_cut"),
+                # Placeholders for later pipeline stages
                 "tts_file": None,
                 "media_file": None,
             })
@@ -96,26 +93,29 @@ class SceneBuilder:
 
     @staticmethod
     def _extract_keywords(narration: str, topic: str) -> List[str]:
-        """Pull the topic as the primary search keyword.
+        """Pull visual nouns and the topic as search keywords."""
+        # Clean topic (remove trademarked qualifiers if possible)
+        clean_topic = topic.replace("Movie", "").replace("Game", "").strip()
+        kw = [clean_topic]
 
-        For stock media search, the *topic itself* is by far the best
-        query.  Narration filler words ("today", "explore", "begin")
-        produce zero results on stock sites, so we skip them.
-        """
-        # The topic is always the most important keyword
-        kw = [topic]
-
-        # Only add words that are NOT common filler and are 5+ chars
-        words = re.findall(r"\b[A-Za-z]{5,}\b", narration)
+        # Extract potential nouns/adjectives from narration
+        words = re.findall(r"\b[A-Za-z]{4,}\b", narration)
+        
+        found = []
         seen = {w.lower() for w in topic.split()}
+        seen.update(SceneBuilder.STOP_WORDS)
+        
         for w in words:
             wl = w.lower()
-            if wl not in seen and wl not in SceneBuilder.STOP_WORDS:
+            if wl not in seen:
+                found.append(wl)
                 seen.add(wl)
-                kw.append(wl)
-            if len(kw) >= 3:
-                break
-        return kw
+            
+        kw.extend(found[:3])
+        if len(kw) < 2:
+            kw.extend(topic.split())
+            
+        return list(dict.fromkeys(kw))[:4]
 
     @staticmethod
     def _estimate_duration(narration: str) -> float:
