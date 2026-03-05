@@ -18,6 +18,9 @@ from config import MEDIA_DIR
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 256  # 256 KB
+DOWNLOAD_HEADERS = {
+    "User-Agent": "AutoVideoEngine/1.0 (https://github.com; bot)"
+}
 
 
 class MediaDownloader:
@@ -48,7 +51,8 @@ class MediaDownloader:
 
         for attempt in range(1, retries + 1):
             try:
-                resp = requests.get(url, stream=True, timeout=60)
+                resp = requests.get(url, stream=True, timeout=60,
+                                    headers=DOWNLOAD_HEADERS)
                 resp.raise_for_status()
                 with open(dest_path, "wb") as f:
                     for chunk in resp.iter_content(CHUNK_SIZE):

@@ -1,10 +1,9 @@
 """
 Media Provider — unified interface that auto‑selects between
-Pixabay (preferred) and Pexels with automatic fallback.
+Wikimedia Commons (preferred, no key needed), Pixabay, and Pexels.
 
-If MEDIA_PROVIDER config is "auto", it tries whichever API key
-is configured first (Pixabay → Pexels). If one fails at runtime,
-it falls back to the other.
+If MEDIA_PROVIDER config is "auto", it uses Wikimedia Commons first,
+then falls back to Pixabay / Pexels if an API key is configured.
 """
 
 import logging
@@ -37,38 +36,43 @@ class MediaProvider:
         pixabay_ok = PIXABAY_API_KEY and PIXABAY_API_KEY != "YOUR_PIXABAY_API_KEY_HERE"
         pexels_ok = PEXELS_API_KEY and PEXELS_API_KEY != "YOUR_PEXELS_API_KEY_HERE"
 
-        if self._provider == "pixabay":
+        if self._provider == "wikimedia":
+            self._primary = self._make_wikimedia()
+            self.provider_name = "Wikimedia Commons"
+            self._fallbacks = self._build_fallbacks(pixabay_ok, pexels_ok)
+        elif self._provider == "pixabay":
             self._primary = self._make_pixabay()
             self.provider_name = "Pixabay"
-            if pexels_ok:
-                self._fallback = self._make_pexels()
+            self._fallbacks = self._build_fallbacks(False, pexels_ok, include_wikimedia=True)
         elif self._provider == "pexels":
             self._primary = self._make_pexels()
             self.provider_name = "Pexels"
-            if pixabay_ok:
-                self._fallback = self._make_pixabay()
-        else:  # auto
-            if pixabay_ok:
-                self._primary = self._make_pixabay()
-                self.provider_name = "Pixabay"
-                if pexels_ok:
-                    self._fallback = self._make_pexels()
-            elif pexels_ok:
-                self._primary = self._make_pexels()
-                self.provider_name = "Pexels"
-            else:
-                raise RuntimeError(
-                    "No media API key configured!\n"
-                    "Set one of these environment variables:\n"
-                    "  PIXABAY_API_KEY  — free at https://pixabay.com/api/docs/\n"
-                    "  PEXELS_API_KEY   — free at https://www.pexels.com/api/\n"
-                    "Or edit config.py directly."
-                )
+            self._fallbacks = self._build_fallbacks(pixabay_ok, False, include_wikimedia=True)
+        else:  # auto → Wikimedia first (no key needed)
+            self._primary = self._make_wikimedia()
+            self.provider_name = "Wikimedia Commons"
+            self._fallbacks = self._build_fallbacks(pixabay_ok, pexels_ok)
 
+        fb_names = [name for name, _ in self._fallbacks]
         logger.info("Media provider: %s%s",
                      self.provider_name,
-                     f" (fallback: {'Pexels' if 'Pixabay' in self.provider_name else 'Pixabay'})"
-                     if self._fallback else "")
+                     f" (fallbacks: {', '.join(fb_names)})" if fb_names else "")
+
+    def _build_fallbacks(self, pixabay_ok, pexels_ok, include_wikimedia=False):
+        """Return ordered list of (name, fetcher) tuples for fallback."""
+        fb = []
+        if include_wikimedia:
+            fb.append(("Wikimedia Commons", self._make_wikimedia()))
+        if pixabay_ok:
+            fb.append(("Pixabay", self._make_pixabay()))
+        if pexels_ok:
+            fb.append(("Pexels", self._make_pexels()))
+        return fb
+
+    @staticmethod
+    def _make_wikimedia():
+        from core.wikimedia_fetcher import WikimediaFetcher
+        return WikimediaFetcher()
 
     @staticmethod
     def _make_pixabay():
@@ -102,15 +106,11 @@ class MediaProvider:
         if len(topic_words) > 1:
             queries_to_try.append(topic_words)        # individual words
 
+        all_providers = [(self.provider_name, self._primary)] + self._fallbacks
+
         for query_kw in queries_to_try:
-            # try primary provider
-            result = self._try_provider(self._primary, self.provider_name, query_kw, media_type, orientation, size)
-            if result:
-                return result
-            # try fallback provider
-            if self._fallback:
-                fallback_name = "Pexels" if "Pixabay" in self.provider_name else "Pixabay"
-                result = self._try_provider(self._fallback, fallback_name, query_kw, media_type, orientation, size)
+            for prov_name, prov in all_providers:
+                result = self._try_provider(prov, prov_name, query_kw, media_type, orientation, size)
                 if result:
                     return result
 
@@ -118,9 +118,10 @@ class MediaProvider:
         if media_type == "videos":
             logger.info("No videos found — trying photos for '%s'", topic)
             for query_kw in queries_to_try:
-                result = self._try_provider(self._primary, self.provider_name, query_kw, "photos", orientation, size)
-                if result:
-                    return result
+                for prov_name, prov in all_providers:
+                    result = self._try_provider(prov, prov_name, query_kw, "photos", orientation, size)
+                    if result:
+                        return result
 
         logger.error("All queries exhausted for keywords: %s", keywords)
         return []

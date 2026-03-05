@@ -28,7 +28,8 @@ MUSIC_DIR = ASSETS_DIR / "music"
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "YOUR_PIXABAY_API_KEY_HERE")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "YOUR_PEXELS_API_KEY_HERE")
 
-# Which provider to use: "pixabay" | "pexels" | "auto" (tries pixabay first)
+# Which provider to use: "wikimedia" | "pixabay" | "pexels" | "auto"
+# auto = Wikimedia Commons first (no key needed), then Pixabay/Pexels fallback
 MEDIA_PROVIDER = os.environ.get("MEDIA_PROVIDER", "auto")
 
 # ── Video Defaults ─────────────────────────────────────────────

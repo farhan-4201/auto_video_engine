@@ -203,9 +203,9 @@ def main():
     )
     parser.add_argument(
         "--provider",
-        choices=["auto", "pixabay", "pexels"],
+        choices=["auto", "wikimedia", "pixabay", "pexels"],
         default="auto",
-        help="Media provider: auto (default), pixabay, or pexels",
+        help="Media provider: auto (default=wikimedia first), wikimedia, pixabay, or pexels",
     )
     args = parser.parse_args()
 
