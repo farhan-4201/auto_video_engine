@@ -1,0 +1,18 @@
+# Core
+requests>=2.31.0
+
+# TTS — edge-tts uses Microsoft's free neural voices (no C++ build needed!)
+edge-tts>=6.1.0
+
+# FFmpeg — imageio-ffmpeg bundles a pre-built binary (no manual install needed)
+imageio-ffmpeg>=0.5.1
+
+# FFmpeg system install is optional if imageio-ffmpeg is installed.
+# Manual install:
+#   Windows:  choco install ffmpeg   OR  https://www.gyan.dev/ffmpeg/builds/
+#   Linux:    sudo apt install ffmpeg
+#   macOS:    brew install ffmpeg
+
+# Optional: uncomment for additional TTS backends
+# TTS>=0.22.0         # Coqui TTS — fully local neural voice (needs C++ build tools)
+# pyttsx3>=2.90       # offline fallback (robotic but zero deps)

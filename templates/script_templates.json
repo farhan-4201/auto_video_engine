@@ -1,0 +1,46 @@
+{
+    "documentary": {
+        "intro": "Today, we explore the fascinating world of {topic}. What you're about to learn may surprise you.",
+        "scenes": [
+            "Let's begin with the basics. {topic} is something that affects millions of people around the world.",
+            "Looking deeper, researchers have found that {topic} has remarkable properties that most people overlook.",
+            "One of the most interesting aspects of {topic} is how it connects to our daily lives.",
+            "Experts in the field have spent decades studying {topic}, and their findings are truly eye-opening.",
+            "The impact of {topic} on society cannot be overstated. Here are the key facts you need to know."
+        ],
+        "outro": "Thank you for watching. If you found this video about {topic} informative, please like and subscribe for more content like this."
+    },
+    "motivational": {
+        "intro": "What if I told you that {topic} could change your entire life? Stay with me.",
+        "scenes": [
+            "Most people go through life never understanding the true power of {topic}.",
+            "The secret that successful people know about {topic} is simpler than you think.",
+            "Every great achievement starts with understanding {topic} at its core.",
+            "When you master {topic}, doors open that you never knew existed.",
+            "Today is the day you take the first step. {topic} is your gateway to greatness."
+        ],
+        "outro": "Remember, the journey of a thousand miles begins with a single step. Start your {topic} journey today. Like and subscribe for more inspiration."
+    },
+    "educational": {
+        "intro": "Welcome to today's lesson on {topic}. By the end of this video, you'll have a solid understanding of the fundamentals.",
+        "scenes": [
+            "First, let's define what {topic} actually means and why it matters.",
+            "The history of {topic} dates back further than most people realize.",
+            "There are three key principles of {topic} that everyone should understand.",
+            "Let's look at some real-world examples of {topic} in action.",
+            "Now let's review the main takeaways about {topic} from today's lesson."
+        ],
+        "outro": "That wraps up our lesson on {topic}. Don't forget to like and subscribe, and leave a comment if you have any questions."
+    },
+    "cinematic": {
+        "intro": "In a world shaped by {topic}, nothing is quite what it seems.",
+        "scenes": [
+            "The story of {topic} begins in the most unexpected place.",
+            "As we journey deeper into {topic}, the picture becomes clearer.",
+            "Behind every great mystery lies a truth. {topic} is no exception.",
+            "The turning point came when {topic} revealed its true nature.",
+            "And so, the world was never the same. {topic} had changed everything."
+        ],
+        "outro": "This has been a cinematic exploration of {topic}. If this moved you, hit like and subscribe for more visual stories."
+    }
+}

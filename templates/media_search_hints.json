@@ -1,0 +1,22 @@
+{
+    "documentary": {
+        "search_style": "nature documentary footage",
+        "keywords_suffix": ["nature", "science", "universe", "earth"],
+        "preferred_type": "videos"
+    },
+    "motivational": {
+        "search_style": "inspirational cinematic",
+        "keywords_suffix": ["sunrise", "success", "mountains", "sky"],
+        "preferred_type": "videos"
+    },
+    "educational": {
+        "search_style": "clean informative",
+        "keywords_suffix": ["technology", "modern", "abstract", "digital"],
+        "preferred_type": "photos"
+    },
+    "cinematic": {
+        "search_style": "cinematic dramatic",
+        "keywords_suffix": ["landscape", "ocean", "dramatic", "dark"],
+        "preferred_type": "videos"
+    }
+}
