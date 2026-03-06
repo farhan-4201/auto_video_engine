@@ -239,5 +239,53 @@ emotion options: "epic" | "mystery" | "sorrow" | "triumph" | "tension" | "dread"
             return f"Note: The year is specified in the title — reference the correct film."
         return f"Note: Write as if you are a knowledgeable film critic who has seen '{topic}' multiple times."
 
+    def load_external(self, script_path: str) -> Dict:
+        """
+        Load a user-provided script JSON file, validate required fields,
+        and backfill defaults for optional ones.
+        """
+        path = Path(script_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Script file not found: {path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            script = json.load(f)
+
+        # ── Validate top-level fields ─────────────────────────
+        if "scenes" not in script or not script["scenes"]:
+            raise ValueError("Script JSON must contain a non-empty 'scenes' list.")
+
+        script.setdefault("topic", path.stem)
+        script.setdefault("style", "documentary")
+        script.setdefault("is_movie", True)
+        script.setdefault("director", "Unknown")
+        script.setdefault("year", "")
+        script.setdefault("summary", f"Video about {script['topic']}")
+
+        # ── Validate & backfill each scene ─────────────────────
+        for i, scene in enumerate(script["scenes"], 1):
+            if "narration" not in scene or not scene["narration"].strip():
+                raise ValueError(f"Scene {i} is missing required 'narration' field.")
+            if "search_query" not in scene or not scene["search_query"].strip():
+                raise ValueError(f"Scene {i} is missing required 'search_query' field.")
+
+            scene.setdefault("scene_id", i)
+            scene.setdefault("type", "intro" if i == 1 else ("outro" if i == len(script["scenes"]) else "body"))
+            scene.setdefault("clip_type", "scene")
+            scene.setdefault("emotion", "epic")
+            scene.setdefault("intensity", 0.5)
+            scene.setdefault("pacing", "medium")
+            scene.setdefault("camera_move", "static_wide")
+            scene.setdefault("color_grade", "muted_film")
+            scene.setdefault("music_cue", "hold")
+            scene.setdefault("cut_style", "hard_cut")
+            scene.setdefault("estimated_duration", 8.0)
+
+        logger.info(
+            "Loaded external script: %d scenes from '%s'",
+            len(script["scenes"]), path.name,
+        )
+        return script
+
     def available_styles(self) -> List[str]:
         return list(STYLE_PRESETS.keys())

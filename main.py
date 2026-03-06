@@ -77,6 +77,7 @@ class VideoOrchestrator:
         topic: str,
         style: str = "documentary",
         bg_music: Optional[str] = None,
+        script_path: Optional[str] = None,
     ) -> Path:
         t0 = time.time()
         logger.info("=" * 60)
@@ -92,9 +93,16 @@ class VideoOrchestrator:
         self.subtitler.set_project(project_id)
         logger.info("Project ID: %s", project_id)
 
-        # ── 1. Generate movie-aware script via Gemini ───────────
-        logger.info("STEP 1/6 — Generating movie-aware script with Gemini…")
-        script = self.writer.generate(topic, style)
+        # ── 1. Load custom script OR generate via Gemini ────────
+        if script_path:
+            logger.info("STEP 1/6 — Loading user-provided script: %s", script_path)
+            script = self.writer.load_external(script_path)
+            # Override topic/style from the script if present
+            topic = script.get("topic", topic)
+            style = script.get("style", style)
+        else:
+            logger.info("STEP 1/6 — Generating movie-aware script with Gemini…")
+            script = self.writer.generate(topic, style)
         logger.info(
             "  Script: %d scenes | director=%s | year=%s | words=%d",
             len(script["scenes"]),
@@ -204,10 +212,20 @@ def main():
         default=None,
         help="Path to background music MP3 (optional)",
     )
+    parser.add_argument(
+        "--script",
+        default=None,
+        help="Path to a custom script JSON file (skips AI generation)",
+    )
     args = parser.parse_args()
 
     orch = VideoOrchestrator()
-    final_video = orch.run(topic=args.topic, style=args.style, bg_music=args.music)
+    final_video = orch.run(
+        topic=args.topic,
+        style=args.style,
+        bg_music=args.music,
+        script_path=args.script,
+    )
     print(f"\nDone! Final video: {final_video}")
 
 

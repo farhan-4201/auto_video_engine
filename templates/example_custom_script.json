@@ -1,0 +1,70 @@
+{
+    "topic": "The Dark Knight",
+    "style": "cinematic",
+    "is_movie": true,
+    "director": "Christopher Nolan",
+    "year": "2008",
+    "summary": "Why The Dark Knight redefined the superhero genre forever",
+    "scenes": [
+        {
+            "scene_id": 1,
+            "type": "intro",
+            "narration": "In 2008, Christopher Nolan unleashed a film that would change superhero cinema forever. The Dark Knight wasn't just a Batman movie — it was a crime thriller masterpiece.",
+            "search_query": "The Dark Knight official trailer HD",
+            "clip_type": "trailer",
+            "emotion": "epic",
+            "intensity": 0.8,
+            "pacing": "medium",
+            "camera_move": "dolly_in",
+            "color_grade": "cold_desaturated",
+            "music_cue": "swell_up",
+            "cut_style": "fade_black",
+            "estimated_duration": 10.0
+        },
+        {
+            "scene_id": 2,
+            "type": "body",
+            "narration": "Heath Ledger's Joker is often called the greatest villain performance in film history. His chaotic energy, the lip-licking, the scars — every detail was pure genius.",
+            "search_query": "The Dark Knight Joker interrogation scene HD",
+            "clip_type": "scene",
+            "emotion": "tension",
+            "intensity": 0.9,
+            "pacing": "slow",
+            "camera_move": "static_wide",
+            "color_grade": "teal_orange",
+            "music_cue": "hold",
+            "cut_style": "hard_cut",
+            "estimated_duration": 12.0
+        },
+        {
+            "scene_id": 3,
+            "type": "body",
+            "narration": "The pencil trick. The hospital explosion. The ferry dilemma. Nolan packed every frame with tension that kept audiences on the edge of their seats.",
+            "search_query": "The Dark Knight hospital explosion scene",
+            "clip_type": "scene",
+            "emotion": "dread",
+            "intensity": 0.85,
+            "pacing": "fast",
+            "camera_move": "handheld",
+            "color_grade": "high_contrast",
+            "music_cue": "swell_up",
+            "cut_style": "hard_cut",
+            "estimated_duration": 9.0
+        },
+        {
+            "scene_id": 4,
+            "type": "outro",
+            "narration": "The Dark Knight proved that superhero films could be art. It changed the genre forever, and Heath Ledger's legacy lives on in every frame.",
+            "search_query": "The Dark Knight ending scene Batman runs",
+            "clip_type": "scene",
+            "emotion": "sorrow",
+            "intensity": 0.6,
+            "pacing": "slow",
+            "camera_move": "crane_up",
+            "color_grade": "muted_film",
+            "music_cue": "swell_down",
+            "cut_style": "fade_black",
+            "estimated_duration": 10.0
+        }
+    ]
+}

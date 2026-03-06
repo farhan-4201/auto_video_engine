@@ -32,7 +32,8 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")   # free tier,
 # Max clips to download per scene (pick the best one)
 YTDLP_MAX_RESULTS = 3
 # Preferred video quality (best ≤1080p to keep file sizes manageable)
-YTDLP_FORMAT = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
+# Prefer single pre-merged mp4 to avoid merge failures; fall back to video-only
+YTDLP_FORMAT = "best[height<=1080][ext=mp4]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]/best"
 # YouTube search query templates — appended after the movie title
 # e.g.  "Inception official trailer", "Inception best scenes clip"
 YTDLP_QUERY_SUFFIXES = [
@@ -65,7 +66,7 @@ DEFAULT_SCENE_DURATION = 6.0       # seconds per scene if TTS is shorter
 MIN_SCENE_DURATION = 3.0
 MAX_SCENE_DURATION = 15.0
 CROSSFADE_DURATION = 0.5
-SCENE_PADDING = 0.3
+SCENE_PADDING = 1.0
 
 # ── Subtitle Defaults ─────────────────────────────────────────
 SUBTITLE_FONT_SIZE = 24

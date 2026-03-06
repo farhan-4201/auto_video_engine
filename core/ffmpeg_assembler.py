@@ -525,7 +525,9 @@ class FFmpegAssembler:
         )
         full_vf = f"{scale_crop},{vf}" if vf else scale_crop
         
-        inputs = ["-i", str(video), "-i", str(audio)]
+        # Input construction: skip first 1s of source video (skip logos), loop if too short
+        video_inputs = ["-ss", "1", "-stream_loop", "-1", "-i", str(video)]
+        inputs = video_inputs + ["-i", str(audio)]
         if sfx:
             inputs += ["-i", str(sfx)]
 

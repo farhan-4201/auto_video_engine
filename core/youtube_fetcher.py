@@ -149,13 +149,19 @@ class YouTubeFetcher:
     # ── helpers ─────────────────────────────────────────────────
     @staticmethod
     def _find_downloaded_file(directory: Path, stem: str) -> Optional[Path]:
-        """Find a file matching the stem with any extension."""
+        """Find a file matching the stem with any extension.
+        Prefer clean merged files over format-specific partial streams."""
+        # First pass: look for clean merged files (no format ID like .f134)
         for ext in [".mp4", ".mkv", ".webm", ".avi", ".mov"]:
             candidate = directory / f"{stem}{ext}"
-            if candidate.exists():
+            if candidate.exists() and candidate.stat().st_size > 100_000:
                 return candidate
-        # Broader search in case yt-dlp added extra suffix
-        matches = list(directory.glob(f"{stem}*"))
+        # Second pass: broader search, pick largest (may include format-specific files)
+        matches = [
+            p for p in directory.glob(f"{stem}*")
+            if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".avi", ".mov")
+            and p.stat().st_size > 100_000
+        ]
         if matches:
             return max(matches, key=lambda p: p.stat().st_size)
         return None
