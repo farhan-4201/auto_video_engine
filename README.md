@@ -15,28 +15,17 @@ Zero cost. Fully automated. Production quality.
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg?style=flat-square)](LICENSE)
 
 ---
-
-https://github.com/user-attachments/assets/7551c368-a7fd-4f3f-a3d9-31edaa88a71b
-
-
-
 </div>
 
 ## Output Demo — *Dirty Harry (1971)*
 
 > Generated end-to-end by this pipeline: script → clips → narration → subtitles → final composite.
 
-https://github.com/user-attachments/assets/dirty-harry-demo.mp4
+https://github.com/user-attachments/assets/7551c368-a7fd-4f3f-a3d9-31edaa88a71b
 
-<!-- ⬆️ To add the video: open a GitHub issue, drag-and-drop output/dirty harry.mp4,
-     copy the generated URL, and replace the placeholder above. -->
 
-<p align="center">
-  <code>python main.py "Dirty Harry" --style cinematic</code> → <code>output/dirty harry.mp4</code>
-</p>
 
-<details>
-<summary><b>🎥 More sample outputs</b></summary>
+
 
 | Movie | Style | Command |
 |-------|-------|---------|
