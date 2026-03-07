@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import re
+import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -154,7 +155,7 @@ def generate_manual_script():
         })
     
     return {
-        "topic": "Dirty Harry (1971) 21 Weird Facts",
+        "topic": "Dirty Harry 1971 21 Weird Fact",
         "style": "documentary",
         "is_movie": True,
         "director": "Don Siegel",
@@ -164,17 +165,30 @@ def generate_manual_script():
     }
 
 def run_pipeline():
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(name)-20s | %(levelname)-7s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
     
-    orch = VideoOrchestrator()
+    # Clear old temp clips for this project so fresh build
+    project_id = "dirty_harry_1971_21_weird_fact_documentary"
+    clips_dir = Path(__file__).parent / "temp" / project_id / "clips"
+    if clips_dir.exists():
+        shutil.rmtree(clips_dir)
+        print(f"Cleared old clips: {clips_dir}")
+    
     script = generate_manual_script()
     
-    # Inject our manual script
+    orch = VideoOrchestrator()
+    # Inject our manual script — bypass Gemini generation
     orch.writer.generate = lambda t, s: script
     
-    print("Starting manual script pipeline...")
-    final_video = orch.run(topic="Dirty Harry (1971) 21 Weird Facts", style="documentary")
+    print(f"Starting 21 Weird Facts pipeline ({len(script['scenes'])} scenes, documentary style)...")
+    final_video = orch.run(
+        topic="Dirty Harry 1971 21 Weird Fact",
+        style="documentary",
+    )
     
     print(f"\nDone! Video generated at: {final_video}")
 

@@ -93,6 +93,63 @@ class FFmpegAssembler:
         self.clips_dir.mkdir(parents=True, exist_ok=True)
 
     # ══════════════════════════════════════════════════════════════
+    # Clip quality validation — reject low-res / corrupt / too-short clips
+    # ══════════════════════════════════════════════════════════════
+    @staticmethod
+    def validate_clip_quality(
+        clip_path: Path,
+        min_width: int = 640,
+        min_height: int = 360,
+        min_duration: float = 2.0,
+    ) -> dict:
+        """
+        Validate a downloaded clip meets quality standards using ffmpeg/ffprobe.
+        Returns dict with: acceptable (bool), width, height, duration, reason.
+        Works with both real ffprobe and imageio-ffmpeg's bundled ffmpeg.
+        """
+        info = {"acceptable": False, "width": 0, "height": 0, "duration": 0.0, "reason": ""}
+        if not clip_path.exists():
+            info["reason"] = "file does not exist"
+            return info
+
+        try:
+            # Use ffmpeg -i to extract stream info (works with imageio-ffmpeg bundle)
+            result = subprocess.run(
+                [FFMPEG_BIN, "-i", str(clip_path), "-hide_banner"],
+                capture_output=True, text=True, timeout=15
+            )
+            # ffmpeg -i writes info to stderr
+            output = result.stderr
+
+            # Parse resolution from "Stream #0:0: Video: ..., 1920x1080 ..."
+            import re
+            res_match = re.search(r'(\d{3,5})x(\d{3,5})', output)
+            if res_match:
+                info["width"] = int(res_match.group(1))
+                info["height"] = int(res_match.group(2))
+
+            # Parse duration from "Duration: HH:MM:SS.ss"
+            dur_match = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', output)
+            if dur_match:
+                h, m, s = dur_match.groups()
+                info["duration"] = int(h) * 3600 + int(m) * 60 + float(s)
+
+            # Validate
+            if info["width"] < min_width or info["height"] < min_height:
+                info["reason"] = f"resolution too low: {info['width']}x{info['height']}"
+                return info
+            if info["duration"] < min_duration:
+                info["reason"] = f"too short: {info['duration']:.1f}s"
+                return info
+
+            info["acceptable"] = True
+            return info
+
+        except Exception as e:
+            info["reason"] = f"probe error: {e}"
+            return info
+
+    # ══════════════════════════════════════════════════════════════
     # Stock footage normalization (Change #4)
     # ══════════════════════════════════════════════════════════════
     @staticmethod
@@ -225,13 +282,22 @@ class FFmpegAssembler:
         peak_events: Optional[List[Dict]] = None,
     ) -> Path:
         """
-        Create a single scene clip with emotion-driven motion,
-        cinematic color grading, and optional peak-event effects.
+        Create a single scene clip with video + TTS audio.
+
+        Clean styles (documentary, educational, review): no color grading,
+        no grain, no vignette, no peak effects — just clean footage.
+
+        Cinematic styles: full effects chain (Kodak curves, grain, vignette,
+        Ken Burns, peak events).
+
+        SYNC FIX: clip duration is locked to exactly tts_duration + SCENE_PADDING
+        so narration always matches the clip length precisely.
         """
         scene_id = scene["scene_id"]
         media_path = Path(scene["media_file"])
         tts_path = Path(scene["tts_file"])
         tts_dur = scene.get("tts_duration", DEFAULT_SCENE_DURATION)
+        # FIX: target_dur matches TTS exactly + minimal padding for clean cut
         target_dur = tts_dur + SCENE_PADDING
 
         # Read cinematic metadata from scene JSON (with defaults)
@@ -245,23 +311,29 @@ class FFmpegAssembler:
 
         is_image = media_path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
 
-        # Color grade + grain + vignette filter chain
-        grade_filter = COLOR_GRADE_FILTERS.get(color_grade, COLOR_GRADE_FILTERS["muted_film"])
-        vf_chain = f"{grade_filter},{_FILM_GRAIN},{_VIGNETTE}"
+        # Clean mode: no effects for documentary-style videos (like reference)
+        clean = style in ("documentary", "educational", "review")
 
-        # Peak-event overlay filters (zoom punch, flash frame)
-        peak_vf = self._build_peak_filters(peak_events, target_dur) if peak_events else ""
-        if peak_vf:
-            vf_chain = f"{vf_chain},{peak_vf}"
+        if clean:
+            vf_chain = ""  # No color grading, grain, or vignette
+        else:
+            # Full cinematic effects chain
+            grade_filter = COLOR_GRADE_FILTERS.get(color_grade, COLOR_GRADE_FILTERS["muted_film"])
+            vf_chain = f"{grade_filter},{_FILM_GRAIN},{_VIGNETTE}"
+            # Peak-event overlay filters (zoom punch, flash frame)
+            peak_vf = self._build_peak_filters(peak_events, target_dur) if peak_events else ""
+            if peak_vf:
+                vf_chain = f"{vf_chain},{peak_vf}"
 
         if is_image:
             cmd = self._cmd_image_scene(
                 media_path, tts_path, target_dur, vf_chain, out_path,
-                sfx_path, emotion, intensity,
+                sfx_path, emotion, intensity, clean=clean,
             )
         else:
             cmd = self._cmd_video_scene(
-                media_path, tts_path, target_dur, vf_chain, out_path, sfx_path,
+                media_path, tts_path, target_dur, vf_chain, out_path,
+                sfx_path, clean=clean,
             )
 
         logger.info("Building clip scene %d (%.1fs, emotion=%s)…",
@@ -307,11 +379,12 @@ class FFmpegAssembler:
     # 2. Concatenate all scene clips
     # ══════════════════════════════════════════════════════════════
     def concatenate(self, clip_paths: List[Path], output_path: Path) -> Path:
-        """Concatenate clips using the concat demuxer."""
+        """Concatenate clips using the concat demuxer with high-quality settings."""
         filelist = self.clips_dir / "filelist.txt"
         with open(filelist, "w", encoding="utf-8") as f:
             for p in clip_paths:
-                safe = str(p).replace("'", "'\\''")
+                # Use forward slashes for ffmpeg concat demuxer compatibility
+                safe = str(p).replace("\\", "/").replace("'", "'\\''")
                 f.write(f"file '{safe}'\n")
 
         cmd = [
@@ -321,6 +394,7 @@ class FFmpegAssembler:
             "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-b:v", VIDEO_BITRATE,
             "-c:a", "aac", "-b:a", AUDIO_BITRATE,
             "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
             str(output_path),
         ]
         logger.info("Concatenating %d clips → %s", len(clip_paths), output_path.name)
@@ -487,10 +561,20 @@ class FFmpegAssembler:
         sfx: Optional[Path] = None,
         emotion: str = "epic",
         intensity: float = 0.5,
+        clean: bool = False,
     ) -> list:
-        # Emotion-aware Ken Burns
-        zoompan = self._emotion_ken_burns(emotion, duration, intensity)
-        full_vf = f"{zoompan},{vf}" if vf else zoompan
+        if clean:
+            # Clean mode: static image, just scale to fit, no Ken Burns motion
+            static_vf = (
+                f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
+                f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT},"
+                f"setsar=1,fps={VIDEO_FPS}"
+            )
+            full_vf = static_vf
+        else:
+            # Emotion-aware Ken Burns
+            zoompan = self._emotion_ken_burns(emotion, duration, intensity)
+            full_vf = f"{zoompan},{vf}" if vf else zoompan
         
         inputs = ["-loop", "1", "-i", str(img), "-i", str(audio)]
         if sfx:
@@ -516,17 +600,30 @@ class FFmpegAssembler:
 
     def _cmd_video_scene(
         self, video: Path, audio: Path, duration: float, vf: str, out: Path,
-        sfx: Optional[Path] = None,
+        sfx: Optional[Path] = None, clean: bool = False,
     ) -> list:
+        """
+        Build FFmpeg command for a video-based scene clip.
+
+        Clean mode: just scale/crop at native fps, loop input if needed.
+        Cinematic mode: fps=24, effects chain, tpad freeze on short clips.
+        """
+        fps = VIDEO_FPS if clean else 24
         scale_crop = (
-            f"fps=24,"
+            f"fps={fps},"
             f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=increase,"
             f"crop={VIDEO_WIDTH}:{VIDEO_HEIGHT}"
         )
         full_vf = f"{scale_crop},{vf}" if vf else scale_crop
-        
-        # Input construction: skip first 1s of source video (skip logos), loop if too short
-        video_inputs = ["-ss", "1", "-stream_loop", "-1", "-i", str(video)]
+
+        if clean:
+            # Clean mode: loop input video so it's always long enough, -t trims output
+            video_inputs = ["-stream_loop", "-1", "-i", str(video)]
+        else:
+            # Cinematic mode: tpad freezes last frame if clip is shorter than TTS
+            full_vf += f",tpad=stop_mode=clone:stop_duration={duration:.2f}"
+            video_inputs = ["-i", str(video)]
+
         inputs = video_inputs + ["-i", str(audio)]
         if sfx:
             inputs += ["-i", str(sfx)]
@@ -551,19 +648,32 @@ class FFmpegAssembler:
 
     @staticmethod
     def _run(cmd: list):
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            logger.error("FFmpeg error: %s", result.stderr[-500:])
-            raise RuntimeError("FFmpeg failed")
+        # Redirect both stdout and stderr to temp file to prevent pipe buffer
+        # deadlock on Windows when FFmpeg outputs large progress data
+        import tempfile
+        with tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='replace') as err_f:
+            result = subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=err_f
+            )
+            if result.returncode != 0:
+                err_f.seek(max(0, err_f.tell() - 2000))
+                error_tail = err_f.read()
+                logger.error("FFmpeg error: %s", error_tail[-500:])
+                raise RuntimeError("FFmpeg failed")
 
     @staticmethod
     def get_duration(filepath: Path) -> float:
+        """Get duration using ffmpeg -i (works with imageio-ffmpeg bundle)."""
         try:
             result = subprocess.run(
-                [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(filepath)],
-                capture_output=True, text=True, check=True
+                [FFMPEG_BIN, "-i", str(filepath), "-hide_banner"],
+                capture_output=True, text=True, timeout=15
             )
-            return float(result.stdout.strip())
+            import re
+            dur_match = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', result.stderr)
+            if dur_match:
+                h, m, s = dur_match.groups()
+                return int(h) * 3600 + int(m) * 60 + float(s)
+            return 0.0
         except:
             return 0.0

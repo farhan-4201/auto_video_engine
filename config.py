@@ -31,9 +31,9 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")   # free tier,
 # Install: pip install yt-dlp
 # Max clips to download per scene (pick the best one)
 YTDLP_MAX_RESULTS = 3
-# Preferred video quality (best ≤1080p to keep file sizes manageable)
-# Prefer single pre-merged mp4 to avoid merge failures; fall back to video-only
-YTDLP_FORMAT = "best[height<=1080][ext=mp4]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080][ext=mp4]/best"
+# Preferred video quality — prioritize pre-merged high-res mp4 for best quality
+# FIX: prefer 720p+ merged mp4 first, then try merging video+audio, then any
+YTDLP_FORMAT = "best[height>=720][ext=mp4]/best[height>=480][ext=mp4]/bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
 # YouTube search query templates — appended after the movie title
 # e.g.  "Inception official trailer", "Inception best scenes clip"
 YTDLP_QUERY_SUFFIXES = [

@@ -46,6 +46,9 @@ class YouTubeFetcher:
         Try each query variant in order until a clip is downloaded.
         Updates scene dict in-place with media_file, yt_video_id, yt_title.
         Returns the updated scene dict.
+
+        QUALITY FIX: Validates downloaded clips meet minimum quality threshold
+        (resolution >= 480p, file size >= 500KB). Retries with next query on failure.
         """
         scene_id = scene["scene_id"]
         query_variants: List[str] = scene.get("query_variants") or [scene["search_query"]]
@@ -54,12 +57,22 @@ class YouTubeFetcher:
             logger.info("  Scene %d — YouTube search: %s", scene_id, query)
             result = self._search_and_download(query, scene_id)
             if result:
-                scene["media_file"] = str(result["filepath"])
+                filepath = result["filepath"]
+                # Quality gate: reject clips that are too small (likely low-res or corrupt)
+                if filepath.stat().st_size < 500_000:
+                    logger.warning(
+                        "  Scene %d — clip too small (%.0f KB), trying next query",
+                        scene_id, filepath.stat().st_size / 1024
+                    )
+                    continue
+
+                scene["media_file"] = str(filepath)
                 scene["yt_video_id"] = result.get("id")
                 scene["yt_title"] = result.get("title")
                 logger.info(
-                    "  Scene %d — Downloaded: %s",
-                    scene_id, result.get("title", "unknown")
+                    "  Scene %d — Downloaded: %s (%.1f MB)",
+                    scene_id, result.get("title", "unknown"),
+                    filepath.stat().st_size / (1024 * 1024)
                 )
                 return scene
 

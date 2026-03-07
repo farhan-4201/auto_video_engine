@@ -107,12 +107,18 @@ class TTSEngine:
 
     @staticmethod
     def get_audio_duration(audio_path: Path) -> float:
+        """Get audio duration using ffmpeg -i (works with imageio-ffmpeg bundle)."""
         try:
+            from config import FFMPEG_BIN
             result = subprocess.run(
-                [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
-                 "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
-                capture_output=True, text=True, check=True
+                [FFMPEG_BIN, "-i", str(audio_path), "-hide_banner"],
+                capture_output=True, text=True, timeout=15
             )
-            return float(result.stdout.strip())
+            import re
+            dur_match = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', result.stderr)
+            if dur_match:
+                h, m, s = dur_match.groups()
+                return int(h) * 3600 + int(m) * 60 + float(s)
+            return 5.0  # fallback
         except:
-            return 5.0 # fallback
+            return 5.0  # fallback

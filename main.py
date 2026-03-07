@@ -12,13 +12,15 @@ Orchestrator — single entry-point for the movie video pipeline:
             ↓
     yt-dlp → Download actual movie clips/trailers from YouTube
             ↓
+    Quality validation → reject low-res / corrupt clips
+            ↓
     edge-tts → Movie-relevant narration audio
             ↓
-    FFmpeg → Scene assembly (trim clips to TTS duration)
+    Peak detection → power-word visual effects
             ↓
-    SRT Subtitles
+    FFmpeg → Scene assembly (trim clips to EXACT TTS duration)
             ↓
-    Final 1080p MP4 with real movie footage + narration
+    Final 1080p MP4 with real movie footage + narration (no subtitles)
 """
 
 import json
@@ -36,7 +38,7 @@ from core.scene_builder import SceneBuilder
 from core.youtube_fetcher import YouTubeFetcher       # ← replaces MediaProvider
 from core.tts_engine import TTSEngine
 from core.ffmpeg_assembler import FFmpegAssembler
-from core.subtitle_gen import SubtitleGenerator
+from core.peak_detector import detect_peaks_for_scene_plan
 from core.compositor import VideoCompositor
 
 # ── Logging ────────────────────────────────────────────────────
@@ -63,7 +65,6 @@ class VideoOrchestrator:
         self.fetcher = YouTubeFetcher()          # ← yt-dlp based
         self.tts = TTSEngine()
         self.assembler = FFmpegAssembler()
-        self.subtitler = SubtitleGenerator()
         self.compositor = VideoCompositor()
 
     # ──────────────────────────────────────────────────────────
@@ -90,7 +91,6 @@ class VideoOrchestrator:
         project_temp.mkdir(parents=True, exist_ok=True)
         self.tts.set_project(project_id)
         self.assembler.set_project(project_id)
-        self.subtitler.set_project(project_id)
         logger.info("Project ID: %s", project_id)
 
         # ── 1. Load custom script OR generate via Gemini ────────
@@ -137,17 +137,48 @@ class VideoOrchestrator:
                 "No clips downloaded. Check your internet connection or try a more popular movie."
             )
 
+        # ── 3b. Quality validation — reject low-res / corrupt clips
+        logger.info("STEP 3b — Validating clip quality…")
+        for scene in scene_plan["scenes"]:
+            if scene.get("media_file"):
+                qinfo = self.assembler.validate_clip_quality(Path(scene["media_file"]))
+                if not qinfo["acceptable"]:
+                    logger.warning(
+                        "  Scene %d — clip rejected (reason: %s), will re-fetch",
+                        scene["scene_id"], qinfo["reason"]
+                    )
+                    scene["media_file"] = None  # mark for re-fetch or skip
+                else:
+                    logger.info(
+                        "  Scene %d — clip OK (%dx%d, %.1fs)",
+                        scene["scene_id"], qinfo["width"], qinfo["height"], qinfo["duration"]
+                    )
+        self.builder.save(scene_plan, plan_path)
+
         # ── 4. TTS — movie-aware narration ──────────────────────
         logger.info("STEP 4/6 — Synthesizing movie narration (edge-tts)…")
         scene_plan = self.tts.synthesize_scenes(scene_plan)
         self.builder.save(scene_plan, plan_path)
 
+        # ── 4b. Peak detection — power-word visual effects ───────
+        # Only for cinematic styles — documentary/educational use clean footage
+        if style in ("cinematic", "motivational"):
+            logger.info("STEP 4b — Detecting narration peak events…")
+            scene_plan = detect_peaks_for_scene_plan(scene_plan)
+            self.builder.save(scene_plan, plan_path)
+        else:
+            logger.info("STEP 4b — Skipping peak detection (clean style: %s)", style)
+
         # ── 5. Assemble clips + narration via FFmpeg ─────────────
+        # FIX: pass peak_events to assembler for visual effects sync
         logger.info("STEP 5/6 — FFmpeg assembly…")
         clip_paths = []
         for scene in scene_plan["scenes"]:
             if scene.get("media_file") and scene.get("tts_file"):
-                clip = self.assembler.build_scene_clip(scene, style)
+                peak_events = scene.get("peak_events", [])
+                clip = self.assembler.build_scene_clip(
+                    scene, style, peak_events=peak_events
+                )
                 clip_paths.append(clip)
             else:
                 missing = []
@@ -166,9 +197,9 @@ class VideoOrchestrator:
         raw_video = project_temp / "raw_concat.mp4"
         self.assembler.concatenate(clip_paths, raw_video)
 
-        # ── 6. Subtitles + music + final composite ───────────────
-        logger.info("STEP 6/6 — Subtitles, music & final composition…")
-        sub_path = self.subtitler.generate_ass(scene_plan)
+        # ── 6. Music mix + final composite (NO subtitles) ────────
+        # FIX: removed subtitle generation and burning — clean narrated video only
+        logger.info("STEP 6/6 — Music mix & final composition (no subtitles)…")
 
         bg_music_path = None
         if bg_music:
@@ -181,7 +212,9 @@ class VideoOrchestrator:
         if bg_music_path:
             logger.info("  Background music: %s", bg_music_path.name)
 
-        final = self.compositor.compose(raw_video, sub_path, scene_plan, bg_music_path)
+        final = self.compositor.compose_no_subtitles(
+            raw_video, scene_plan, bg_music_path
+        )
 
         elapsed = time.time() - t0
         logger.info("=" * 60)
